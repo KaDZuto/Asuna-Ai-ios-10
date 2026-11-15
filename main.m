@@ -124,7 +124,7 @@ static NSString *CleanSpeechText(NSString *input) {
 @property (nonatomic, strong) NSString *currentAvatar;
 @property (nonatomic, assign) BOOL webSearchEnabled;
 @property (nonatomic, assign) BOOL localTTSEnabled;
-@property (nonatomic, assign) NSInteger ttsMode; // 0 off, 1 iOS, 2 Asuna Original
+@property (nonatomic, assign) NSInteger ttsMode; // 0 off, 1 iOS, 2 Asuna Original, 3 Piper local
 @property (nonatomic, strong) NSString *asunaTtsUrl;
 @property (nonatomic, strong) NSString *customBgPath;
 @property (nonatomic, assign) NSInteger displayPreset;
@@ -166,7 +166,8 @@ static NSString *CleanSpeechText(NSString *input) {
         _webSearchEnabled = [defs boolForKey:PREF_WEB_SEARCH];
         _localTTSEnabled = [defs objectForKey:PREF_TTS_LOCAL] != nil ? [defs boolForKey:PREF_TTS_LOCAL] : YES;
         NSNumber *tm = [defs objectForKey:PREF_TTS_MODE];
-        _ttsMode = tm ? [tm integerValue] : (_localTTSEnabled ? 1 : 0);
+        NSInteger m = tm ? [tm integerValue] : (_localTTSEnabled ? 1 : 0);
+        _ttsMode = (m < 0 || m > 3) ? 1 : m;
         _asunaTtsUrl = [defs stringForKey:PREF_ASUNA_TTS_URL] ?: @"http://127.0.0.1:8085";
         _customBgPath = [defs stringForKey:PREF_CUSTOM_BG_PATH];
         _displayPreset = [[defs objectForKey:PREF_DISPLAY_PRESET] integerValue];
@@ -480,8 +481,8 @@ static NSString *CleanSpeechText(NSString *input) {
         if (indexPath.row == 0) {
             UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
             cell.backgroundColor = ASUNA_GLASS_CARD;
-            UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:@[@"Выкл", @"iOS TTS", @"Asuna Original"]];
-            seg.selectedSegmentIndex = MAX(0, MIN(2, (NSInteger)sm.ttsMode));
+            UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:@[@"Выкл", @"iOS", @"Asuna", @"Piper"]];
+            seg.selectedSegmentIndex = MAX(0, MIN(3, (NSInteger)sm.ttsMode));
             seg.frame = CGRectMake(15, 6, tableView.bounds.size.width - 30, 32);
             seg.autoresizingMask = UIViewAutoresizingFlexibleWidth;
             seg.tintColor = ASUNA_PEACH_ACCENT;
@@ -492,14 +493,25 @@ static NSString *CleanSpeechText(NSString *input) {
         } else {
             UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
             cell.backgroundColor = ASUNA_GLASS_CARD;
-            cell.textLabel.text = @"Сервер Asuna Original Voice";
-            cell.textLabel.font = AsunaFont(15, YES);
-            cell.textLabel.textColor = (sm.ttsMode == 2) ? ASUNA_TEXT_WHITE : ASUNA_TEXT_MUTED;
-            cell.detailTextLabel.text = sm.asunaTtsUrl ?: @"http://127.0.0.1:8085";
-            cell.detailTextLabel.font = AsunaFont(13, NO);
-            cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
-            cell.accessoryType = (sm.ttsMode == 2) ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
-            cell.selectionStyle = (sm.ttsMode == 2) ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+            if (sm.ttsMode == 3) {
+                cell.textLabel.text = @"Piper (локально)";
+                cell.textLabel.font = AsunaFont(15, YES);
+                cell.textLabel.textColor = ASUNA_TEXT_WHITE;
+                cell.detailTextLabel.text = @"Голос: ru_RU-irina (мягкий женский)";
+                cell.detailTextLabel.font = AsunaFont(13, NO);
+                cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
+                cell.accessoryType = UITableViewCellAccessoryNone;
+                cell.selectionStyle = UITableViewCellSelectionStyleNone;
+            } else {
+                cell.textLabel.text = @"Сервер Asuna Original Voice";
+                cell.textLabel.font = AsunaFont(15, YES);
+                cell.textLabel.textColor = (sm.ttsMode == 2) ? ASUNA_TEXT_WHITE : ASUNA_TEXT_MUTED;
+                cell.detailTextLabel.text = sm.asunaTtsUrl ?: @"http://127.0.0.1:8085";
+                cell.detailTextLabel.font = AsunaFont(13, NO);
+                cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
+                cell.accessoryType = (sm.ttsMode == 2) ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
+                cell.selectionStyle = (sm.ttsMode == 2) ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+            }
             return cell;
         }
     }
@@ -1715,6 +1727,10 @@ static NSString *CleanSpeechText(NSString *input) {
         [self speakTextWithAsunaOriginal:txt];
         return;
     }
+    if (mode == 3) {
+        [self speakTextWithPiper:txt];
+        return;
+    }
 
     AVSpeechUtterance *utt = [AVSpeechUtterance speechUtteranceWithString:txt];
     utt.rate = 0.48;
@@ -1760,6 +1776,45 @@ static NSString *CleanSpeechText(NSString *input) {
             [self playAsunaAudioData:wav];
         });
     }] resume];
+}
+
+
+- (void)speakTextWithPiper:(NSString *)txt {
+    // Local Piper (sherpa-onnx) TTS. Requires sherpa-onnx c-api linked and model bundled in tts-piper/.
+    NSString *bundle = [[NSBundle mainBundle] bundlePath];
+    NSArray *candidates = @[
+        [bundle stringByAppendingPathComponent:@"tts-piper"],
+        @"/Applications/AsunaLiquidGlass.app/tts-piper"
+    ];
+    NSString *modelDir = nil;
+    for (NSString *c in candidates) { if ([[NSFileManager defaultManager] fileExistsAtPath:[c stringByAppendingPathComponent:@"ru_RU-irina-medium.onnx"]]) { modelDir = c; break; } }
+    if (!modelDir) { self->_speechBubbleLabel.text = @"Piper: модель не найдена в tts-piper"; return; }
+
+    __weak typeof(self) weakSelf = self;
+    dispatch_async(dispatch_get_global_queue(DISPATCH_QUEUE_PRIORITY_DEFAULT, 0), ^{
+        @try {
+            NSData *wav = [self synthesizePiperWavForText:txt modelDir:modelDir];
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) self = weakSelf;
+                if (!self) return;
+                if (!wav || wav.length == 0) { self->_speechBubbleLabel.text = @"Piper: не удалось синтезировать речь (движок недоступен?)"; return; }
+                [self playAsunaAudioData:wav];
+            });
+        } @catch (NSException *ex) {
+            dispatch_async(dispatch_get_main_queue(), ^{
+                __strong typeof(weakSelf) self = weakSelf;
+                if (!self) return;
+                self->_speechBubbleLabel.text = [NSString stringWithFormat:@"Piper: ошибка (%@)", ex.reason ?: @"unknown"]; 
+            });
+        }
+    });
+}
+
+- (NSData *)synthesizePiperWavForText:(NSString *)txt modelDir:(NSString *)modelDir {
+    // TODO: integrate sherpa-onnx c-api (SherpaOnnxCreateOfflineTts / SherpaOnnxOfflineTtsGenerate).
+    // For now returns nil until libsherpa-onnx built for iOS 10 arm64 is linked.
+    (void)txt; (void)modelDir;
+    return nil;
 }
 
 - (void)playAsunaAudioData:(NSData *)data {
