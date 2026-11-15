@@ -107,6 +107,9 @@ static NSString *CleanSpeechText(NSString *input) {
 #define PREF_TTS_LOCAL @"Asuna_TTSLocalEnabled"
 #define PREF_CUSTOM_BG_PATH @"Asuna_CustomBgPath"
 #define PREF_DISPLAY_PRESET @"Asuna_DisplayPreset"
+#define PREF_FREE_SCALE @"Asuna_FreeScale"
+#define PREF_FREE_OX @"Asuna_FreeOffsetX"
+#define PREF_FREE_OY @"Asuna_FreeOffsetY"
 
 @interface SettingsManager : NSObject
 + (instancetype)shared;
@@ -121,6 +124,9 @@ static NSString *CleanSpeechText(NSString *input) {
 @property (nonatomic, assign) BOOL localTTSEnabled;
 @property (nonatomic, strong) NSString *customBgPath;
 @property (nonatomic, assign) NSInteger displayPreset;
+@property (nonatomic, assign) CGFloat freeScale;
+@property (nonatomic, assign) CGFloat freeOffsetX;
+@property (nonatomic, assign) CGFloat freeOffsetY;
 - (NSString *)activeModel;
 - (void)save;
 @end
@@ -157,6 +163,10 @@ static NSString *CleanSpeechText(NSString *input) {
         _localTTSEnabled = [defs objectForKey:PREF_TTS_LOCAL] != nil ? [defs boolForKey:PREF_TTS_LOCAL] : YES;
         _customBgPath = [defs stringForKey:PREF_CUSTOM_BG_PATH];
         _displayPreset = [[defs objectForKey:PREF_DISPLAY_PRESET] integerValue];
+        NSNumber *fs = [defs objectForKey:PREF_FREE_SCALE];
+        _freeScale = fs ? [fs doubleValue] : 1.0;
+        _freeOffsetX = [[defs objectForKey:PREF_FREE_OX] doubleValue];
+        _freeOffsetY = [[defs objectForKey:PREF_FREE_OY] doubleValue];
     }
     return self;
 }
@@ -278,6 +288,7 @@ static NSString *CleanSpeechText(NSString *input) {
 @property (nonatomic, copy) void (^onDismissed)(void);
 @property (nonatomic, copy) void (^onBackgroundChanged)(void);
 @property (nonatomic, copy) void (^onDisplayChanged)(void);
+@property (nonatomic, copy) void (^onEnterAdjustMode)(void);
 @end
 
 @implementation ModelsSettingsViewController {
@@ -373,7 +384,7 @@ static NSString *CleanSpeechText(NSString *input) {
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
         case 0: return 2; // фон
-        case 1: return 3; // пресеты отображения
+        case 1: return ([SettingsManager shared].displayPreset == 3) ? 5 : 4; // пресеты + настройка
         case 2: return 1; // tts
         case 3: return 1; // прокси
         case 4: return 3; // провайдер и ключи
@@ -427,18 +438,27 @@ static NSString *CleanSpeechText(NSString *input) {
     if (indexPath.section == 1) {
         UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
         cell.backgroundColor = ASUNA_GLASS_CARD;
-        NSArray *titles = @[@"Полный рост", @"От юбки до головы", @"Крупный план"];
-        NSArray *subs = @[@"Весь персонаж целиком", @"Голова, верх и юбка (без ног)", @"Лицо и плечи крупнее"];
-        NSInteger row = indexPath.row;
-        if (row < 0 || row >= (NSInteger)titles.count) row = 0;
-        cell.textLabel.text = titles[row];
-        cell.detailTextLabel.text = subs[row];
-        cell.textLabel.font = AsunaFont(15, YES);
-        cell.detailTextLabel.font = AsunaFont(13, NO);
-        cell.textLabel.textColor = ASUNA_TEXT_WHITE;
-        cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
-        cell.accessoryType = (sm.displayPreset == row) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
-        if (sm.displayPreset == row) cell.textLabel.textColor = ASUNA_PEACH_ACCENT;
+        if (indexPath.row <= 3) {
+            NSArray *titles = @[@"Полный рост", @"От юбки до головы", @"Крупный план", @"Свободный"];
+            NSArray *subs = @[@"Весь персонаж целиком", @"Голова, верх и юбка (без ног)", @"Лицо и плечи крупнее", @"Ручная настройка положения и масштаба"];
+            NSInteger row = indexPath.row;
+            cell.textLabel.text = titles[row];
+            cell.detailTextLabel.text = subs[row];
+            cell.textLabel.font = AsunaFont(15, YES);
+            cell.detailTextLabel.font = AsunaFont(13, NO);
+            cell.textLabel.textColor = ASUNA_TEXT_WHITE;
+            cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
+            cell.accessoryType = (sm.displayPreset == row) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+            if (sm.displayPreset == row) cell.textLabel.textColor = ASUNA_PEACH_ACCENT;
+        } else {
+            cell.textLabel.text = @"Настроить положение";
+            cell.detailTextLabel.text = @"Перемещайте и масштабируйте, затем зафиксируйте";
+            cell.textLabel.font = AsunaFont(15, YES);
+            cell.detailTextLabel.font = AsunaFont(13, NO);
+            cell.textLabel.textColor = ASUNA_CYAN_ACCENT;
+            cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
+            cell.accessoryType = UITableViewCellAccessoryDisclosureIndicator;
+        }
         return cell;
     }
     
@@ -611,10 +631,16 @@ static NSString *CleanSpeechText(NSString *input) {
             [self->_tableView reloadData];
         }
     } else if (indexPath.section == 1) {
-        sm.displayPreset = indexPath.row;
-        [sm save];
-        [tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
-        if (self.onDisplayChanged) self.onDisplayChanged();
+        if (indexPath.row <= 3) {
+            sm.displayPreset = indexPath.row;
+            [sm save];
+            [tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationFade];
+            if (self.onDisplayChanged) self.onDisplayChanged();
+        } else {
+            [self dismissViewControllerAnimated:YES completion:^{
+                if (self.onEnterAdjustMode) self.onEnterAdjustMode();
+            }];
+        }
     } else if (indexPath.section == 3) {
         [self promptForTextTitle:@"URL Прокси" current:sm.proxyUrl onSave:^(NSString *val) {
             sm.proxyUrl = val;
@@ -1039,6 +1065,11 @@ static NSString *CleanSpeechText(NSString *input) {
     float _lipSyncCurrent;
     float _lipSyncTarget;
     float _lipSyncEnergy;
+    BOOL _isAdjustingLayout;
+    UIView *_adjustOverlay;
+    UIPanGestureRecognizer *_adjustPan;
+    UIPinchGestureRecognizer *_adjustPinch;
+    CGFloat _adjustStartOX, _adjustStartOY, _adjustStartScale;
 }
 
 - (void)viewDidLoad {
@@ -1115,7 +1146,11 @@ static NSString *CleanSpeechText(NSString *input) {
     [self.view addSubview:_live2dCharacterView];
     
     // Load default Asuna outfit (asuna_01 - Knights of the Blood)
-    _live2dCharacterView.displayPreset = [SettingsManager shared].displayPreset;
+    SettingsManager *sm = [SettingsManager shared];
+    _live2dCharacterView.displayPreset = sm.displayPreset;
+    _live2dCharacterView.freeScale = sm.freeScale;
+    _live2dCharacterView.freeOffsetX = sm.freeOffsetX;
+    _live2dCharacterView.freeOffsetY = sm.freeOffsetY;
     [_live2dCharacterView loadModelNamed:@"asuna_01"];
 
     // Tap gesture for interactive reactions
@@ -1132,6 +1167,16 @@ static NSString *CleanSpeechText(NSString *input) {
 
 - (void)onCharacterPanned:(UIPanGestureRecognizer *)pan {
     if (!_live2dCharacterView) return;
+    if (_isAdjustingLayout) {
+        CGPoint t = [pan translationInView:self.view];
+        if (pan.state == UIGestureRecognizerStateBegan) {
+            _adjustStartOX = _live2dCharacterView.freeOffsetX;
+            _adjustStartOY = _live2dCharacterView.freeOffsetY;
+        }
+        _live2dCharacterView.freeOffsetX = _adjustStartOX + t.x;
+        _live2dCharacterView.freeOffsetY = _adjustStartOY + t.y;
+        return;
+    }
     CGPoint p = [pan locationInView:_live2dCharacterView];
     CGSize sz = _live2dCharacterView.bounds.size;
     if (sz.width <= 1 || sz.height <= 1) return;
@@ -1142,6 +1187,76 @@ static NSString *CleanSpeechText(NSString *input) {
     CGFloat nx = (p.x / sz.width) * 2.0 - 1.0;
     CGFloat ny = 1.0 - (p.y / sz.height) * 2.0; // up positive
     [_live2dCharacterView lookAtNormalizedPoint:CGPointMake(nx, ny)];
+}
+
+- (void)onCharacterPinched:(UIPinchGestureRecognizer *)pinch {
+    if (!_isAdjustingLayout || !_live2dCharacterView) return;
+    if (pinch.state == UIGestureRecognizerStateBegan) {
+        _adjustStartScale = _live2dCharacterView.freeScale;
+        if (_adjustStartScale < 0.2) _adjustStartScale = [SettingsManager shared].freeScale;
+        if (_adjustStartScale < 0.2) _adjustStartScale = 1.0;
+    }
+    CGFloat s = _adjustStartScale * pinch.scale;
+    if (s < 0.4) s = 0.4;
+    if (s > 4.0) s = 4.0;
+    _live2dCharacterView.freeScale = s;
+}
+
+- (void)enterCharacterAdjustMode {
+    if (_isAdjustingLayout) return;
+    SettingsManager *sm = [SettingsManager shared];
+    sm.displayPreset = 3;
+    [sm save];
+    _live2dCharacterView.displayPreset = 3;
+    _live2dCharacterView.freeScale = (sm.freeScale < 0.2 ? 1.0 : sm.freeScale);
+    _live2dCharacterView.freeOffsetX = sm.freeOffsetX;
+    _live2dCharacterView.freeOffsetY = sm.freeOffsetY;
+    _adjustStartScale = _live2dCharacterView.freeScale;
+    _isAdjustingLayout = YES;
+    _bottomDockBar.hidden = YES;
+    _speechBubblePill.hidden = YES;
+    
+    if (!_adjustPinch) {
+        _adjustPinch = [[UIPinchGestureRecognizer alloc] initWithTarget:self action:@selector(onCharacterPinched:)];
+        [_live2dCharacterView addGestureRecognizer:_adjustPinch];
+    }
+    _adjustPinch.enabled = YES;
+    
+    _adjustOverlay = [[UIView alloc] initWithFrame:CGRectMake(12, 40, self.view.bounds.size.width - 24, 56)];
+    _adjustOverlay.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleBottomMargin;
+    _adjustOverlay.backgroundColor = [UIColor colorWithWhite:0.08 alpha:0.78];
+    _adjustOverlay.layer.cornerRadius = 16;
+    [self.view addSubview:_adjustOverlay];
+    UILabel *hint = [[UILabel alloc] initWithFrame:CGRectMake(12, 6, _adjustOverlay.bounds.size.width - 140, 44)];
+    hint.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+    hint.text = @"Перетащите и масштабируйте (2 пальца), затем зафиксируйте";
+    hint.textColor = [UIColor whiteColor];
+    hint.font = AsunaFont(13, NO);
+    hint.numberOfLines = 2;
+    [_adjustOverlay addSubview:hint];
+    UIButton *ok = [UIButton buttonWithType:UIButtonTypeSystem];
+    ok.frame = CGRectMake(_adjustOverlay.bounds.size.width - 120, 10, 108, 36);
+    ok.autoresizingMask = UIViewAutoresizingFlexibleLeftMargin;
+    ok.backgroundColor = ASUNA_PEACH_ACCENT;
+    ok.layer.cornerRadius = 12;
+    [ok setTitle:@"Зафиксировать" forState:UIControlStateNormal];
+    [ok setTitleColor:[UIColor whiteColor] forState:UIControlStateNormal];
+    [ok addTarget:self action:@selector(finishCharacterAdjustMode) forControlEvents:UIControlEventTouchUpInside];
+    [_adjustOverlay addSubview:ok];
+}
+
+- (void)finishCharacterAdjustMode {
+    SettingsManager *sm = [SettingsManager shared];
+    sm.displayPreset = 3;
+    sm.freeScale = _live2dCharacterView.freeScale;
+    sm.freeOffsetX = _live2dCharacterView.freeOffsetX;
+    sm.freeOffsetY = _live2dCharacterView.freeOffsetY;
+    [sm save];
+    _isAdjustingLayout = NO;
+    if (_adjustPinch) _adjustPinch.enabled = NO;
+    [_adjustOverlay removeFromSuperview];
+    _adjustOverlay = nil;
+    _bottomDockBar.hidden = NO;
 }
 
 - (void)updateBackgroundDisplay {
@@ -1678,6 +1793,14 @@ static NSString *CleanSpeechText(NSString *input) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
         self->_live2dCharacterView.displayPreset = [SettingsManager shared].displayPreset;
+        self->_live2dCharacterView.freeScale = [SettingsManager shared].freeScale;
+        self->_live2dCharacterView.freeOffsetX = [SettingsManager shared].freeOffsetX;
+        self->_live2dCharacterView.freeOffsetY = [SettingsManager shared].freeOffsetY;
+    };
+    settingsVC.onEnterAdjustMode = ^{
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        [self enterCharacterAdjustMode];
     };
     settingsVC.onDismissed = ^{
         __strong typeof(weakSelf) self = weakSelf;

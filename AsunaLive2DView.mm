@@ -66,6 +66,9 @@
     NSTimeInterval _nextLifeNudgeTime;
     NSTimeInterval _lastPanTime;
     NSInteger _displayPreset;
+    CGFloat _freeScale;
+    CGFloat _freeOffsetX;
+    CGFloat _freeOffsetY;
 }
 
 @property (nonatomic, strong) EAGLContext *context;
@@ -97,6 +100,9 @@
         _targetLipSync = _currentLipSync = 0;
         _gestureDuration = 0;
         _displayPreset = 0;
+        _freeScale = 1.0;
+        _freeOffsetX = 0;
+        _freeOffsetY = 0;
         
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
@@ -137,6 +143,9 @@
 - (void)setDisplayPreset:(NSInteger)displayPreset {
     _displayPreset = displayPreset;
 }
+- (void)setFreeScale:(CGFloat)freeScale { _freeScale = freeScale; }
+- (void)setFreeOffsetX:(CGFloat)freeOffsetX { _freeOffsetX = freeOffsetX; }
+- (void)setFreeOffsetY:(CGFloat)freeOffsetY { _freeOffsetY = freeOffsetY; }
 
 - (void)dealloc {
     [_displayLink invalidate];
@@ -682,25 +691,25 @@
     CGFloat offsetY = 0;
     
     switch (_displayPreset) {
-        case 1: { // От юбки до головы: крупнее, ноги за экраном снизу, голова целиком
-            scale = fit * 1.55f;
-            CGFloat scaledH = canvasH * scale;
+        case 1: { // От юбки до головы
+            scale = fit * 1.45f;
             offsetY = topMargin;
-            // ensure lower part (skirt area) stays in view, avoid pushing model too low
-            CGFloat maxOffsetY = viewH - scaledH * 0.62f; // keep ~top 62% visible
-            if (offsetY < maxOffsetY) offsetY = maxOffsetY;
             break;
         }
-        case 2: { // Крупный план: лицо и плечи
-            scale = fit * 2.00f;
-            CGFloat scaledH = canvasH * scale;
+        case 2: { // Крупный план
+            scale = fit * 1.85f;
             offsetY = topMargin;
-            CGFloat maxOffsetY = viewH - scaledH * 0.45f;
-            if (offsetY < maxOffsetY) offsetY = maxOffsetY;
+            break;
+        }
+        case 3: { // Свободный режим
+            CGFloat fs = _freeScale;
+            if (fs < 0.2f) fs = 1.0f;
+            scale = fit * fs;
+            offsetY = (viewH - canvasH * scale) / 2.0f + _freeOffsetY;
             break;
         }
         default: { // Полный рост
-            scale = fit * 1.02f;
+            scale = fit * 0.98f;
             CGFloat scaledH = canvasH * scale;
             offsetY = (viewH - scaledH) / 2.0f;
             if (offsetY < topMargin) offsetY = topMargin;
@@ -710,6 +719,7 @@
     
     CGFloat scaledW = canvasW * scale;
     CGFloat offsetX = (viewW - scaledW) / 2.0f;
+    if (_displayPreset == 3) offsetX += _freeOffsetX;
     
     glOrthof(0, viewW, viewH, 0, -1.0f, 1.0f);
     

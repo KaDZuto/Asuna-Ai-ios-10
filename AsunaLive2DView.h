@@ -24,6 +24,9 @@
 
 @property (nonatomic, assign, readonly) BOOL isModelLoaded;
 @property (nonatomic, copy, readonly) NSString *currentModelId;
-@property (nonatomic, assign) NSInteger displayPreset; // 0 full, 1 skirt-to-head, 2 close
+@property (nonatomic, assign) NSInteger displayPreset; // 0 full, 1 skirt-to-head, 2 close, 3 free
+@property (nonatomic, assign) CGFloat freeScale;
+@property (nonatomic, assign) CGFloat freeOffsetX;
+@property (nonatomic, assign) CGFloat freeOffsetY;
 
 @end
