@@ -105,6 +105,8 @@ static NSString *CleanSpeechText(NSString *input) {
 #define PREF_WEB_SEARCH @"Asuna_WebSearchEnabled"
 #define PREF_CHATS @"Asuna_ChatsHistory"
 #define PREF_TTS_LOCAL @"Asuna_TTSLocalEnabled"
+#define PREF_TTS_MODE @"Asuna_TTSMode"
+#define PREF_ASUNA_TTS_URL @"Asuna_TTSUrl"
 #define PREF_CUSTOM_BG_PATH @"Asuna_CustomBgPath"
 #define PREF_DISPLAY_PRESET @"Asuna_DisplayPreset"
 #define PREF_FREE_SCALE @"Asuna_FreeScale"
@@ -122,6 +124,8 @@ static NSString *CleanSpeechText(NSString *input) {
 @property (nonatomic, strong) NSString *currentAvatar;
 @property (nonatomic, assign) BOOL webSearchEnabled;
 @property (nonatomic, assign) BOOL localTTSEnabled;
+@property (nonatomic, assign) NSInteger ttsMode; // 0 off, 1 iOS, 2 Asuna Original
+@property (nonatomic, strong) NSString *asunaTtsUrl;
 @property (nonatomic, strong) NSString *customBgPath;
 @property (nonatomic, assign) NSInteger displayPreset;
 @property (nonatomic, assign) CGFloat freeScale;
@@ -161,6 +165,9 @@ static NSString *CleanSpeechText(NSString *input) {
         _currentAvatar = [defs stringForKey:PREF_CURRENT_AVATAR] ?: @"asuna_01";
         _webSearchEnabled = [defs boolForKey:PREF_WEB_SEARCH];
         _localTTSEnabled = [defs objectForKey:PREF_TTS_LOCAL] != nil ? [defs boolForKey:PREF_TTS_LOCAL] : YES;
+        NSNumber *tm = [defs objectForKey:PREF_TTS_MODE];
+        _ttsMode = tm ? [tm integerValue] : (_localTTSEnabled ? 1 : 0);
+        _asunaTtsUrl = [defs stringForKey:PREF_ASUNA_TTS_URL] ?: @"http://127.0.0.1:8085";
         _customBgPath = [defs stringForKey:PREF_CUSTOM_BG_PATH];
         _displayPreset = [[defs objectForKey:PREF_DISPLAY_PRESET] integerValue];
         NSNumber *fs = [defs objectForKey:PREF_FREE_SCALE];
@@ -188,7 +195,10 @@ static NSString *CleanSpeechText(NSString *input) {
     [defs setObject:_openRouterModel forKey:PREF_OPENROUTER_MODEL];
     [defs setObject:_currentAvatar forKey:PREF_CURRENT_AVATAR];
     [defs setBool:_webSearchEnabled forKey:PREF_WEB_SEARCH];
+    _localTTSEnabled = (_ttsMode != 0);
     [defs setBool:_localTTSEnabled forKey:PREF_TTS_LOCAL];
+    [defs setInteger:_ttsMode forKey:PREF_TTS_MODE];
+    [defs setObject:_asunaTtsUrl ?: @"http://127.0.0.1:8085" forKey:PREF_ASUNA_TTS_URL];
     [defs setObject:_customBgPath ?: @"" forKey:PREF_CUSTOM_BG_PATH];
     [defs setInteger:_displayPreset forKey:PREF_DISPLAY_PRESET];
     [defs setDouble:_freeScale forKey:PREF_FREE_SCALE];
@@ -389,7 +399,7 @@ static NSString *CleanSpeechText(NSString *input) {
     switch (section) {
         case 0: return 2; // фон
         case 1: return ([SettingsManager shared].displayPreset == 3) ? 5 : 4; // пресеты + настройка
-        case 2: return 1; // tts
+        case 2: return 2; // tts mode + asuna url
         case 3: return 1; // прокси
         case 4: return 3; // провайдер и ключи
         case 5: return 2; // лимиты
@@ -467,20 +477,31 @@ static NSString *CleanSpeechText(NSString *input) {
     }
     
     if (indexPath.section == 2) {
-        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
-        cell.backgroundColor = ASUNA_GLASS_CARD;
-        cell.textLabel.text = @"Локальный синтез речи (iOS TTS)";
-        cell.textLabel.font = AsunaFont(15, YES);
-        cell.textLabel.textColor = ASUNA_TEXT_WHITE;
-        cell.detailTextLabel.text = @"Озвучивать реплики Асуны нативным голосом iPad";
-        cell.detailTextLabel.font = AsunaFont(13, NO);
-        cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
-        UISwitch *sw = [[UISwitch alloc] init];
-        sw.on = sm.localTTSEnabled;
-        sw.onTintColor = ASUNA_PEACH_ACCENT;
-        [sw addTarget:self action:@selector(onLocalTTSToggled:) forControlEvents:UIControlEventValueChanged];
-        cell.accessoryView = sw;
-        return cell;
+        if (indexPath.row == 0) {
+            UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
+            cell.backgroundColor = ASUNA_GLASS_CARD;
+            UISegmentedControl *seg = [[UISegmentedControl alloc] initWithItems:@[@"Выкл", @"iOS TTS", @"Asuna Original"]];
+            seg.selectedSegmentIndex = MAX(0, MIN(2, (NSInteger)sm.ttsMode));
+            seg.frame = CGRectMake(15, 6, tableView.bounds.size.width - 30, 32);
+            seg.autoresizingMask = UIViewAutoresizingFlexibleWidth;
+            seg.tintColor = ASUNA_PEACH_ACCENT;
+            [seg setTitleTextAttributes:@{NSFontAttributeName: AsunaFont(13, YES)} forState:UIControlStateNormal];
+            [seg addTarget:self action:@selector(onTTSModeChanged:) forControlEvents:UIControlEventValueChanged];
+            [cell.contentView addSubview:seg];
+            return cell;
+        } else {
+            UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+            cell.backgroundColor = ASUNA_GLASS_CARD;
+            cell.textLabel.text = @"Сервер Asuna Original Voice";
+            cell.textLabel.font = AsunaFont(15, YES);
+            cell.textLabel.textColor = (sm.ttsMode == 2) ? ASUNA_TEXT_WHITE : ASUNA_TEXT_MUTED;
+            cell.detailTextLabel.text = sm.asunaTtsUrl ?: @"http://127.0.0.1:8085";
+            cell.detailTextLabel.font = AsunaFont(13, NO);
+            cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
+            cell.accessoryType = (sm.ttsMode == 2) ? UITableViewCellAccessoryDisclosureIndicator : UITableViewCellAccessoryNone;
+            cell.selectionStyle = (sm.ttsMode == 2) ? UITableViewCellSelectionStyleDefault : UITableViewCellSelectionStyleNone;
+            return cell;
+        }
     }
     
     if (indexPath.section == 3) {
@@ -616,6 +637,14 @@ static NSString *CleanSpeechText(NSString *input) {
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     SettingsManager *sm = [SettingsManager shared];
+    if (indexPath.section == 2 && indexPath.row == 1 && sm.ttsMode == 2) {
+        [self promptForTextTitle:@"URL сервера Asuna TTS" current:sm.asunaTtsUrl onSave:^(NSString *v) {
+            sm.asunaTtsUrl = v;
+            [sm save];
+            [tableView reloadRowsAtIndexPaths:@[indexPath] withRowAnimation:UITableViewRowAnimationAutomatic];
+        }];
+        return;
+    }
     
     if (indexPath.section == 0) {
         if (indexPath.row == 0) {
@@ -733,9 +762,12 @@ static NSString *CleanSpeechText(NSString *input) {
     [_tableView reloadData];
 }
 
-- (void)onLocalTTSToggled:(UISwitch *)sw {
-    [SettingsManager shared].localTTSEnabled = sw.isOn;
-    [[SettingsManager shared] save];
+- (void)onTTSModeChanged:(UISegmentedControl *)seg {
+    SettingsManager *sm = [SettingsManager shared];
+    sm.ttsMode = seg.selectedSegmentIndex;
+    sm.localTTSEnabled = (sm.ttsMode != 0);
+    [sm save];
+    [_tableView reloadSections:[NSIndexSet indexSetWithIndex:2] withRowAnimation:UITableViewRowAnimationAutomatic];
 }
 
 - (BOOL)shouldAutorotate {
@@ -1039,7 +1071,7 @@ static NSString *CleanSpeechText(NSString *input) {
 @end
 
 // --- MAIN SCREEN: Asuna Liquid Glass Character Centerpiece with Floating Dock ---
-@interface AsunaMainViewController : UIViewController <AVSpeechSynthesizerDelegate>
+@interface AsunaMainViewController : UIViewController <AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate>
 @end
 
 @implementation AsunaMainViewController {
@@ -1064,6 +1096,9 @@ static NSString *CleanSpeechText(NSString *input) {
     BOOL _isRecording;
     SFSpeechRecognizer *_speechRecognizer;
     AVSpeechSynthesizer *_speechSynthesizer;
+    AVAudioPlayer *_asunaAudioPlayer;
+    NSTimer *_asunaMeterTimer;
+    BOOL _isTTSSpeaking;
     NSTimer *_lipSyncTimer;
     NSTimeInterval _lipSyncPhase;
     float _lipSyncCurrent;
@@ -1587,7 +1622,7 @@ static NSString *CleanSpeechText(NSString *input) {
                 if (action) {
                     [self->_live2dCharacterView applyLive2DAction:action];
                 }
-                if ([SettingsManager shared].localTTSEnabled) {
+                if ([SettingsManager shared].ttsMode != 0) {
                     [self speakTextLocally:clean];
                 }
             } else if (error) {
@@ -1658,30 +1693,124 @@ static NSString *CleanSpeechText(NSString *input) {
     [_live2dCharacterView setLipSyncValue:0.0f];
 }
 
+- (void)stopAsunaOriginalPlayback {
+    if (_asunaMeterTimer) { [_asunaMeterTimer invalidate]; _asunaMeterTimer = nil; }
+    if (_asunaAudioPlayer) { [_asunaAudioPlayer stop]; _asunaAudioPlayer = nil; }
+}
+
 - (void)speakTextLocally:(NSString *)rawText {
     NSString *txt = CleanSpeechText(rawText);
     if (!txt || txt.length == 0) return;
-    
+    SettingsManager *sm = [SettingsManager shared];
+    NSInteger mode = sm.ttsMode;
+
     if (_speechSynthesizer.isSpeaking) {
         [_speechSynthesizer stopSpeakingAtBoundary:AVSpeechBoundaryImmediate];
     }
+    [self stopAsunaOriginalPlayback];
     [self stopLipSyncAnimation];
-    
+
+    if (mode == 0) return;
+    if (mode == 2) {
+        [self speakTextWithAsunaOriginal:txt];
+        return;
+    }
+
     AVSpeechUtterance *utt = [AVSpeechUtterance speechUtteranceWithString:txt];
     utt.rate = 0.48;
-    utt.pitchMultiplier = 1.15; // Melodic pitch for Asuna
+    utt.pitchMultiplier = 1.15;
     utt.volume = 1.0;
-    
     AVSpeechSynthesisVoice *v = [AVSpeechSynthesisVoice voiceWithLanguage:@"ru-RU"];
     if (!v) v = [AVSpeechSynthesisVoice voiceWithLanguage:[NSLocale currentLocale].localeIdentifier];
     utt.voice = v;
-    
     [_speechSynthesizer speakUtterance:utt];
+}
+
+- (void)speakTextWithAsunaOriginal:(NSString *)txt {
+    NSString *base = [SettingsManager shared].asunaTtsUrl ?: @"http://127.0.0.1:8085";
+    if (base.length == 0) base = @"http://127.0.0.1:8085";
+    NSString *urlStr = [base hasSuffix:@"/api/synthesize"] ? base : [base stringByAppendingString:@"/api/synthesize"];
+    NSURL *url = [NSURL URLWithString:urlStr];
+    if (!url) { self->_speechBubbleLabel.text = @"Asuna TTS: неверный URL"; return; }
+
+    NSMutableURLRequest *req = [NSMutableURLRequest requestWithURL:url];
+    req.HTTPMethod = @"POST";
+    req.timeoutInterval = 90;
+    [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
+    req.HTTPBody = [NSJSONSerialization dataWithJSONObject:@{@"text": txt} options:0 error:nil];
+
+    __weak typeof(self) weakSelf = self;
+    [[[NSURLSession sharedSession] dataTaskWithRequest:req completionHandler:^(NSData *data, NSURLResponse *response, NSError *error) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
+            if (error || !data) {
+                self->_speechBubbleLabel.text = [NSString stringWithFormat:@"Asuna TTS недоступен: %@", error.localizedDescription ?: @"нет ответа"];
+                return;
+            }
+            NSDictionary *json = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
+            NSString *jerr = ([json[@"error"] isKindOfClass:[NSString class]] && [json[@"error"] length] > 0) ? json[@"error"] : nil;
+            NSString *b64 = json[@"audio_base64"];
+            if (jerr || ![b64 isKindOfClass:[NSString class]] || b64.length == 0) {
+                self->_speechBubbleLabel.text = [NSString stringWithFormat:@"Asuna TTS: %@", jerr ?: @"пустой ответ"];
+                return;
+            }
+            NSData *wav = [[NSData alloc] initWithBase64EncodedString:b64 options:NSDataBase64DecodingIgnoreUnknownCharacters];
+            if (!wav || wav.length == 0) { self->_speechBubbleLabel.text = @"Asuna TTS: ошибка декодирования аудио"; return; }
+            [self playAsunaAudioData:wav];
+        });
+    }] resume];
+}
+
+- (void)playAsunaAudioData:(NSData *)data {
+    [self stopAsunaOriginalPlayback];
+    NSError *err = nil;
+    [[AVAudioSession sharedInstance] setCategory:AVAudioSessionCategoryPlayback withOptions:AVAudioSessionCategoryOptionMixWithOthers error:nil];
+    [[AVAudioSession sharedInstance] setActive:YES error:nil];
+    _asunaAudioPlayer = [[AVAudioPlayer alloc] initWithData:data error:&err];
+    if (!_asunaAudioPlayer || err) {
+        self->_speechBubbleLabel.text = [NSString stringWithFormat:@"Asuna TTS: ошибка воспроизведения (%@)", err.localizedDescription ?: @"?"];
+        return;
+    }
+    _asunaAudioPlayer.delegate = self;
+    _asunaAudioPlayer.meteringEnabled = YES;
+    [_asunaAudioPlayer prepareToPlay];
+    _isTTSSpeaking = YES;
+    [self startLipSyncAnimation];
+    [_asunaAudioPlayer play];
+    __weak typeof(self) weakSelf = self;
+    _asunaMeterTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/30.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self || !self->_asunaAudioPlayer || !self->_asunaAudioPlayer.isPlaying) return;
+        [self->_asunaAudioPlayer updateMeters];
+        float db = [self->_asunaAudioPlayer averagePowerForChannel:0];
+        float level = powf(10.0f, db / 20.0f);
+        if (level < 0.03f) level = 0.03f; if (level > 1.0f) level = 1.0f;
+        self->_lipSyncEnergy = 0.06f + level * 0.88f;
+    }];
+    [[NSRunLoop mainRunLoop] addTimer:_asunaMeterTimer forMode:NSRunLoopCommonModes];
+}
+
+- (void)audioPlayerDidFinishPlaying:(AVAudioPlayer *)player successfully:(BOOL)flag {
+    if (player == _asunaAudioPlayer) {
+        [self stopAsunaOriginalPlayback];
+        _isTTSSpeaking = NO;
+        [self stopLipSyncAnimation];
+    }
+}
+
+- (void)audioPlayerDecodeErrorDidOccur:(AVAudioPlayer *)player error:(NSError *)error {
+    if (player == _asunaAudioPlayer) {
+        [self stopAsunaOriginalPlayback];
+        _isTTSSpeaking = NO;
+        [self stopLipSyncAnimation];
+    }
 }
 
 #pragma mark - AVSpeechSynthesizerDelegate (Lip Sync)
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didStartSpeechUtterance:(AVSpeechUtterance *)utterance {
+    _isTTSSpeaking = YES;
     [self startLipSyncAnimation];
 }
 
@@ -1698,10 +1827,12 @@ static NSString *CleanSpeechText(NSString *input) {
 }
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didFinishSpeechUtterance:(AVSpeechUtterance *)utterance {
+    _isTTSSpeaking = NO;
     [self stopLipSyncAnimation];
 }
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didCancelSpeechUtterance:(AVSpeechUtterance *)utterance {
+    _isTTSSpeaking = NO;
     [self stopLipSyncAnimation];
 }
 
@@ -1715,7 +1846,7 @@ static NSString *CleanSpeechText(NSString *input) {
         clean = CleanSpeechText(clean);
         self->_speechBubbleLabel.text = clean;
         if (action) [self->_live2dCharacterView applyLive2DAction:action];
-        if ([SettingsManager shared].localTTSEnabled) [self speakTextLocally:clean];
+        if ([SettingsManager shared].ttsMode != 0) [self speakTextLocally:clean];
     };
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:drawer];
     nav.modalPresentationStyle = UIModalPresentationFormSheet;
