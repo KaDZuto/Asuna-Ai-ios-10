@@ -277,6 +277,7 @@ static NSString *CleanSpeechText(NSString *input) {
 @interface ModelsSettingsViewController : UIViewController <UITableViewDataSource, UITableViewDelegate, UIImagePickerControllerDelegate, UINavigationControllerDelegate>
 @property (nonatomic, copy) void (^onDismissed)(void);
 @property (nonatomic, copy) void (^onBackgroundChanged)(void);
+@property (nonatomic, copy) void (^onDisplayChanged)(void);
 @end
 
 @implementation ModelsSettingsViewController {
@@ -354,28 +355,30 @@ static NSString *CleanSpeechText(NSString *input) {
     }] resume];
 }
 
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 6; }
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView { return 7; }
 
 - (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section {
     switch (section) {
         case 0: return @"ОФОРМЛЕНИЕ И ФОН";
-        case 1: return @"СИНТЕЗ РЕЧИ (TTS)";
-        case 2: return @"ПРОКСИ СЕРВЕР";
-        case 3: return @"ПРОВАЙДЕР И КЛЮЧИ";
-        case 4: return @"ЛИМИТЫ КЛЮЧЕЙ НА СЕРВЕРЕ";
-        case 5: return @"МОДЕЛИ НЕЙРОСЕТЕЙ (ТАП ДЛЯ ВЫБОРА)";
+        case 1: return @"ОТОБРАЖЕНИЕ ПЕРСОНАЖА";
+        case 2: return @"СИНТЕЗ РЕЧИ (TTS)";
+        case 3: return @"ПРОКСИ СЕРВЕР";
+        case 4: return @"ПРОВАЙДЕР И КЛЮЧИ";
+        case 5: return @"ЛИМИТЫ КЛЮЧЕЙ НА СЕРВЕРЕ";
+        case 6: return @"МОДЕЛИ НЕЙРОСЕТЕЙ (ТАП ДЛЯ ВЫБОРА)";
         default: return nil;
     }
 }
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section {
     switch (section) {
-        case 0: return 2; // 1: Выбрать фото из Галереи, 2: Сбросить на стандартный градиент
-        case 1: return 1;
-        case 2: return 1;
-        case 3: return 3;
-        case 4: return 2;
-        case 5: {
+        case 0: return 2; // фон
+        case 1: return 3; // пресеты отображения
+        case 2: return 1; // tts
+        case 3: return 1; // прокси
+        case 4: return 3; // провайдер и ключи
+        case 5: return 2; // лимиты
+        case 6: {
             NSString *prov = [SettingsManager shared].currentProvider;
             if ([prov isEqualToString:@"gemini"]) {
                 return _geminiModels.count > 0 ? _geminiModels.count : 4;
@@ -424,6 +427,24 @@ static NSString *CleanSpeechText(NSString *input) {
     if (indexPath.section == 1) {
         UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
         cell.backgroundColor = ASUNA_GLASS_CARD;
+        NSArray *titles = @[@"Полный рост", @"От юбки до головы", @"Крупный план"];
+        NSArray *subs = @[@"Весь персонаж целиком", @"Голова, верх и юбка (без ног)", @"Лицо и плечи крупнее"];
+        NSInteger row = indexPath.row;
+        if (row < 0 || row >= (NSInteger)titles.count) row = 0;
+        cell.textLabel.text = titles[row];
+        cell.detailTextLabel.text = subs[row];
+        cell.textLabel.font = AsunaFont(15, YES);
+        cell.detailTextLabel.font = AsunaFont(13, NO);
+        cell.textLabel.textColor = ASUNA_TEXT_WHITE;
+        cell.detailTextLabel.textColor = ASUNA_TEXT_MUTED;
+        cell.accessoryType = (sm.displayPreset == row) ? UITableViewCellAccessoryCheckmark : UITableViewCellAccessoryNone;
+        if (sm.displayPreset == row) cell.textLabel.textColor = ASUNA_PEACH_ACCENT;
+        return cell;
+    }
+    
+    if (indexPath.section == 2) {
+        UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
+        cell.backgroundColor = ASUNA_GLASS_CARD;
         cell.textLabel.text = @"Локальный синтез речи (iOS TTS)";
         cell.textLabel.font = AsunaFont(15, YES);
         cell.textLabel.textColor = ASUNA_TEXT_WHITE;
@@ -438,7 +459,7 @@ static NSString *CleanSpeechText(NSString *input) {
         return cell;
     }
     
-    if (indexPath.section == 2) {
+    if (indexPath.section == 3) {
         UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
         cell.backgroundColor = ASUNA_GLASS_CARD;
         cell.textLabel.text = @"URL Прокси";
@@ -451,7 +472,7 @@ static NSString *CleanSpeechText(NSString *input) {
         return cell;
     }
     
-    if (indexPath.section == 3) {
+    if (indexPath.section == 4) {
         if (indexPath.row == 0) {
             UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleDefault reuseIdentifier:nil];
             cell.backgroundColor = ASUNA_GLASS_CARD;
@@ -489,7 +510,7 @@ static NSString *CleanSpeechText(NSString *input) {
         }
     }
     
-    if (indexPath.section == 4) {
+    if (indexPath.section == 5) {
         UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleValue1 reuseIdentifier:nil];
         cell.backgroundColor = ASUNA_GLASS_CARD;
         cell.textLabel.font = AsunaFont(14, YES);
@@ -512,7 +533,7 @@ static NSString *CleanSpeechText(NSString *input) {
         return cell;
     }
     
-    // Section 5: Models
+    // Section 6: Models
     UITableViewCell *cell = [[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:nil];
     cell.backgroundColor = ASUNA_GLASS_CARD;
     
@@ -589,13 +610,18 @@ static NSString *CleanSpeechText(NSString *input) {
             if (self.onBackgroundChanged) self.onBackgroundChanged();
             [self->_tableView reloadData];
         }
-    } else if (indexPath.section == 2) {
+    } else if (indexPath.section == 1) {
+        sm.displayPreset = indexPath.row;
+        [sm save];
+        [tableView reloadSections:[NSIndexSet indexSetWithIndex:1] withRowAnimation:UITableViewRowAnimationNone];
+        if (self.onDisplayChanged) self.onDisplayChanged();
+    } else if (indexPath.section == 3) {
         [self promptForTextTitle:@"URL Прокси" current:sm.proxyUrl onSave:^(NSString *val) {
             sm.proxyUrl = val;
             [sm save];
             [self fetchModelsAndLimits];
         }];
-    } else if (indexPath.section == 3) {
+    } else if (indexPath.section == 4) {
         if (indexPath.row == 1) {
             [self promptForTextTitle:@"Gemini API Key" current:sm.geminiKey onSave:^(NSString *val) {
                 sm.geminiKey = val;
@@ -609,7 +635,7 @@ static NSString *CleanSpeechText(NSString *input) {
                 [self->_tableView reloadData];
             }];
         }
-    } else if (indexPath.section == 5) {
+    } else if (indexPath.section == 6) {
         NSString *chosen = nil;
         if ([sm.currentProvider isEqualToString:@"gemini"]) {
             if (_geminiModels.count > indexPath.row) {
@@ -629,7 +655,7 @@ static NSString *CleanSpeechText(NSString *input) {
             if (chosen) sm.openRouterModel = chosen;
         }
         [sm save];
-        [tableView reloadSections:[NSIndexSet indexSetWithIndex:5] withRowAnimation:UITableViewRowAnimationNone];
+        [tableView reloadSections:[NSIndexSet indexSetWithIndex:6] withRowAnimation:UITableViewRowAnimationNone];
     }
 }
 
@@ -1646,6 +1672,11 @@ static NSString *CleanSpeechText(NSString *input) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) return;
         [self updateBackgroundDisplay];
+        self->_live2dCharacterView.displayPreset = [SettingsManager shared].displayPreset;
+    };
+    settingsVC.onDisplayChanged = ^{
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
         self->_live2dCharacterView.displayPreset = [SettingsManager shared].displayPreset;
     };
     settingsVC.onDismissed = ^{
