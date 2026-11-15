@@ -454,7 +454,8 @@
     setTarget(action[@"head_y"], _targetHeadY, 30.0f);
     setTarget(action[@"body_angle"], _targetBodyAngle, 10.0f);
     if ([action[@"eye_open"] isKindOfClass:[NSNumber class]]) {
-        _targetEyeOpen = [action[@"eye_open"] floatValue];
+        float eo = [action[@"eye_open"] floatValue];
+        _targetEyeOpen = fmaxf(0.65f, fminf(1.0f, eo)); // keep eyes open
     }
     if ([action[@"mouth_open"] isKindOfClass:[NSNumber class]]) {
         _targetLipSync = [action[@"mouth_open"] floatValue];
@@ -582,7 +583,9 @@
         _targetHeadY *= 0.992f;
         _targetBodyAngle *= 0.992f;
     }
-    _targetEyeOpen += (1.0f - _targetEyeOpen) * 0.01f;
+    // always recover toward open quickly so eyes don't stay closed long
+    _targetEyeOpen += (1.0f - _targetEyeOpen) * 0.08f;
+    if (_targetEyeOpen < 0.65f) _targetEyeOpen = 0.65f;
     
     // Gesture offsets (procedural, applied on top)
     float gAngleX = 0, gAngleY = 0, gAngleZ = 0, gBodyX = 0, gArmR = 0, gArmL = 0;

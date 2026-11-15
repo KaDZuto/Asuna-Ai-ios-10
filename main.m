@@ -42,7 +42,41 @@ static void ApplyLiquidGlass(UIView *view, CGFloat cornerRadius, BOOL specularRi
     }
 }
 
-// Clean speech text
+static NSString *StripEmoji(NSString *input) {
+    if (!input) return @"";
+    NSMutableString *out = [NSMutableString stringWithCapacity:input.length];
+    [input enumerateSubstringsInRange:NSMakeRange(0, input.length)
+                              options:NSStringEnumerationByComposedCharacterSequences
+                           usingBlock:^(NSString *substr, NSRange substrRange, NSRange enclosingRange, BOOL *stop) {
+        if (!substr) return;
+        unichar c = [substr characterAtIndex:0];
+        BOOL emoji = NO;
+        if (substr.length > 1) {
+            // surrogate pairs / sequences often used for emoji
+            unichar c1 = c;
+            unichar c2 = [substr characterAtIndex:1];
+            if (c1 >= 0xD800 && c1 <= 0xDBFF && c2 >= 0xDC00 && c2 <= 0xDFFF) emoji = YES;
+        }
+        if (c >= 0x2600 && c <= 0x27BF) emoji = YES; // misc symbols, dingbats
+        if (c >= 0xFE00 && c <= 0xFE0F) emoji = YES; // variation selectors
+        if (c == 0x200D) emoji = YES; // ZWJ
+        if (c >= 0x2300 && c <= 0x23FF) emoji = YES;
+        if (c >= 0x2B00 && c <= 0x2BFF) emoji = YES;
+        if ([substr rangeOfCharacterFromSet:[NSCharacterSet characterSetWithCharactersInString:@"☺☹❤⭐✨⚡☀☁☔❄"]].location != NSNotFound) emoji = YES;
+        // common emoji blocks by high surrogate ranges covered above; also filter pictographs via unicode scalars
+        for (NSUInteger i = 0; i < substr.length && !emoji; i++) {
+            unichar ch = [substr characterAtIndex:i];
+            if (ch == 0x20E3) emoji = YES; // keycap
+        }
+        if (!emoji) [out appendString:substr];
+    }];
+    // collapse extra spaces
+    NSRegularExpression *ws = [NSRegularExpression regularExpressionWithPattern:@"[ \t]{2,}" options:0 error:nil];
+    NSString *res = [ws stringByReplacingMatchesInString:out options:0 range:NSMakeRange(0, out.length) withTemplate:@" "];
+    return res;
+}
+
+// Clean speech/display text
 static NSString *CleanSpeechText(NSString *input) {
     if (!input || input.length == 0) return @"";
     NSString *clean = input;
@@ -52,6 +86,7 @@ static NSString *CleanSpeechText(NSString *input) {
     clean = [rxInline stringByReplacingMatchesInString:clean options:0 range:NSMakeRange(0, clean.length) withTemplate:@""];
     clean = [clean stringByReplacingOccurrencesOfString:@"*" withString:@""];
     clean = [clean stringByReplacingOccurrencesOfString:@"#" withString:@""];
+    clean = StripEmoji(clean);
     return [clean stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
 }
 
@@ -734,14 +769,15 @@ static NSString *CleanSpeechText(NSString *input) {
 
 - (NSString *)stripLive2D:(NSString *)text {
     if (!text) return @"";
-    NSRange o = [text rangeOfString:@"<live2d>" options:NSCaseInsensitiveSearch];
-    NSRange c = [text rangeOfString:@"</live2d>" options:NSCaseInsensitiveSearch];
+    NSString *clean = text;
+    NSRange o = [clean rangeOfString:@"<live2d>" options:NSCaseInsensitiveSearch];
+    NSRange c = [clean rangeOfString:@"</live2d>" options:NSCaseInsensitiveSearch];
     if (o.location != NSNotFound && c.location != NSNotFound && c.location > o.location) {
-        NSString *clean = [text stringByReplacingCharactersInRange:NSMakeRange(o.location, (c.location+c.length)-o.location) withString:@""];
-        clean = [clean stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
-        return clean.length ? clean : text;
+        clean = [clean stringByReplacingCharactersInRange:NSMakeRange(o.location, (c.location+c.length)-o.location) withString:@""];
     }
-    return text;
+    clean = StripEmoji(clean);
+    clean = [clean stringByTrimmingCharactersInSet:[NSCharacterSet whitespaceAndNewlineCharacterSet]];
+    return clean.length ? clean : StripEmoji(text);
 }
 
 - (void)viewDidLoad {
@@ -899,7 +935,7 @@ static NSString *CleanSpeechText(NSString *input) {
     [req setValue:@"application/json" forHTTPHeaderField:@"Content-Type"];
     
     NSMutableArray *wire = [NSMutableArray array];
-    [wire addObject:@{@"role": @"system", @"parts": @[@"Ты Асуна (Yuuki Asuna) — живая, тёплая и заботливая. Отвечай кратко и естественно по-русски. В конце ответа добавляй <live2d>{\"expression\":\"F_FUN\",\"motion_group\":\"idle\",\"motion_index\":0,\"gestures\":[{\"name\":\"nod\",\"side\":\"right\",\"intensity\":0.6,\"speed\":1}]}</live2d> (подбирай expression/gestures по смыслу)."]}];
+    [wire addObject:@{@"role": @"system", @"parts": @[@"Ты Асуна (Yuuki Asuna) — живая, тёплая и заботливая. Отвечай кратко и естественно по-русски, без эмодзи и смайликов. В конце ответа добавляй <live2d>{\"expression\":\"F_FUN\",\"motion_group\":\"idle\",\"motion_index\":0,\"eye_open\":1,\"gestures\":[{\"name\":\"nod\",\"side\":\"right\",\"intensity\":0.6,\"speed\":1}]}</live2d> (подбирай expression/gestures по смыслу, глаза открыты)."]}];
     for (NSDictionary *m in _messages) {
         [wire addObject:@{@"role": m[@"role"], @"parts": @[m[@"text"] ?: @""]}];
     }
@@ -1366,13 +1402,13 @@ static NSString *CleanSpeechText(NSString *input) {
     
     NSString *systemPrompt =
     @"Ты Асуна Юки (Yuuki Asuna) из Sword Art Online — умная, заботливая и живая. "
-    @"Отвечай на русском, кратко и естественно (1-3 предложения). "
+    @"Отвечай на русском, кратко и естественно (1-3 предложения). Не используй эмодзи и смайлики. "
     @"В КОНЦЕ каждого ответа обязательно добавь блок <live2d>{...}</live2d> с JSON (без markdown): "
     @"{\"expression\":\"F_FUN|F_FUN_SMILE|F_FUN_MAX|F_SURPRISE|F_SAD|F_ANGRY|F_THINK|F_SLEEP\","
     @"\"motion_group\":\"idle\",\"motion_index\":0,"
     @"\"head_x\":0,\"head_y\":0,\"body_angle\":0,\"eye_open\":1,\"mouth_open\":0,"
     @"\"gestures\":[{\"name\":\"wave|nod|shake_head|turn_left|turn_right|bow_casual|clap|think|happy_gesture|greeting\",\"side\":\"right\",\"intensity\":0.7,\"speed\":1}]} "
-    @"Подбирай expression/gestures по смыслу ответа. head_x/head_y/body_angle в диапазоне -1..1.";
+    @"Подбирай expression/gestures по смыслу ответа. head_x/head_y/body_angle в диапазоне -1..1, eye_open всегда 1.";
     
     NSArray *msgs = @[
         @{@"role": @"system", @"parts": @[systemPrompt]},
@@ -1523,10 +1559,12 @@ static NSString *CleanSpeechText(NSString *input) {
 - (void)openChatDrawer {
     ChatDrawerViewController *drawer = [[ChatDrawerViewController alloc] init];
     drawer.onNewReplyReceived = ^(NSString *reply) {
-        self->_speechBubbleLabel.text = reply;
-        if ([SettingsManager shared].localTTSEnabled) {
-            [self speakTextLocally:reply];
-        }
+        NSString *clean = reply;
+        NSDictionary *action = [self extractLive2DActionFromText:reply cleanedText:&clean];
+        clean = CleanSpeechText(clean);
+        self->_speechBubbleLabel.text = clean;
+        if (action) [self->_live2dCharacterView applyLive2DAction:action];
+        if ([SettingsManager shared].localTTSEnabled) [self speakTextLocally:clean];
     };
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:drawer];
     nav.modalPresentationStyle = UIModalPresentationFormSheet;
