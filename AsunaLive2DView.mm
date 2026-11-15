@@ -65,6 +65,7 @@
     NSTimeInterval _nextExpressionTime;
     NSTimeInterval _nextLifeNudgeTime;
     NSTimeInterval _lastPanTime;
+    NSInteger _displayPreset;
 }
 
 @property (nonatomic, strong) EAGLContext *context;
@@ -95,6 +96,7 @@
         _targetEyeOpen = _currentEyeOpen = 1.0f;
         _targetLipSync = _currentLipSync = 0;
         _gestureDuration = 0;
+        _displayPreset = 0;
         
         static dispatch_once_t onceToken;
         dispatch_once(&onceToken, ^{
@@ -130,6 +132,10 @@
 - (void)layoutSubviews {
     [super layoutSubviews];
     _glkView.frame = self.bounds;
+}
+
+- (void)setDisplayPreset:(NSInteger)displayPreset {
+    _displayPreset = displayPreset;
 }
 
 - (void)dealloc {
@@ -669,12 +675,29 @@
     
     CGFloat scaleX = viewW / canvasW;
     CGFloat scaleY = viewH / canvasH;
-    CGFloat scale = MIN(scaleX, scaleY) * 1.05f;
+    CGFloat fit = MIN(scaleX, scaleY);
+    CGFloat mul = 1.05f;
+    CGFloat extraY = -viewH * 0.05f;
+    switch (_displayPreset) {
+        case 1: // от юбки до головы
+            mul = 1.70f;
+            extraY = viewH * 0.10f;
+            break;
+        case 2: // крупный план
+            mul = 2.20f;
+            extraY = viewH * 0.18f;
+            break;
+        default:
+            mul = 1.05f;
+            extraY = -viewH * 0.05f;
+            break;
+    }
+    CGFloat scale = fit * mul;
     
     CGFloat scaledW = canvasW * scale;
     CGFloat scaledH = canvasH * scale;
     CGFloat offsetX = (viewW - scaledW) / 2.0f;
-    CGFloat offsetY = (viewH - scaledH) / 2.0f - (viewH * 0.05f);
+    CGFloat offsetY = (viewH - scaledH) / 2.0f + extraY;
     
     glOrthof(0, viewW, viewH, 0, -1.0f, 1.0f);
     

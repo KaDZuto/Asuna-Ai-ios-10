@@ -24,5 +24,6 @@
 
 @property (nonatomic, assign, readonly) BOOL isModelLoaded;
 @property (nonatomic, copy, readonly) NSString *currentModelId;
+@property (nonatomic, assign) NSInteger displayPreset; // 0 full, 1 skirt-to-head, 2 close
 
 @end

@@ -106,6 +106,7 @@ static NSString *CleanSpeechText(NSString *input) {
 #define PREF_CHATS @"Asuna_ChatsHistory"
 #define PREF_TTS_LOCAL @"Asuna_TTSLocalEnabled"
 #define PREF_CUSTOM_BG_PATH @"Asuna_CustomBgPath"
+#define PREF_DISPLAY_PRESET @"Asuna_DisplayPreset"
 
 @interface SettingsManager : NSObject
 + (instancetype)shared;
@@ -119,6 +120,7 @@ static NSString *CleanSpeechText(NSString *input) {
 @property (nonatomic, assign) BOOL webSearchEnabled;
 @property (nonatomic, assign) BOOL localTTSEnabled;
 @property (nonatomic, strong) NSString *customBgPath;
+@property (nonatomic, assign) NSInteger displayPreset;
 - (NSString *)activeModel;
 - (void)save;
 @end
@@ -154,6 +156,7 @@ static NSString *CleanSpeechText(NSString *input) {
         _webSearchEnabled = [defs boolForKey:PREF_WEB_SEARCH];
         _localTTSEnabled = [defs objectForKey:PREF_TTS_LOCAL] != nil ? [defs boolForKey:PREF_TTS_LOCAL] : YES;
         _customBgPath = [defs stringForKey:PREF_CUSTOM_BG_PATH];
+        _displayPreset = [[defs objectForKey:PREF_DISPLAY_PRESET] integerValue];
     }
     return self;
 }
@@ -1086,6 +1089,7 @@ static NSString *CleanSpeechText(NSString *input) {
     [self.view addSubview:_live2dCharacterView];
     
     // Load default Asuna outfit (asuna_01 - Knights of the Blood)
+    _live2dCharacterView.displayPreset = [SettingsManager shared].displayPreset;
     [_live2dCharacterView loadModelNamed:@"asuna_01"];
 
     // Tap gesture for interactive reactions
@@ -1639,10 +1643,16 @@ static NSString *CleanSpeechText(NSString *input) {
     ModelsSettingsViewController *settingsVC = [[ModelsSettingsViewController alloc] init];
     __weak typeof(self) weakSelf = self;
     settingsVC.onBackgroundChanged = ^{
-        [weakSelf updateBackgroundDisplay];
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        [self updateBackgroundDisplay];
+        self->_live2dCharacterView.displayPreset = [SettingsManager shared].displayPreset;
     };
     settingsVC.onDismissed = ^{
-        [weakSelf updateBackgroundDisplay];
+        __strong typeof(weakSelf) self = weakSelf;
+        if (!self) return;
+        [self updateBackgroundDisplay];
+        self->_live2dCharacterView.displayPreset = [SettingsManager shared].displayPreset;
     };
     UINavigationController *nav = [[UINavigationController alloc] initWithRootViewController:settingsVC];
     nav.modalPresentationStyle = UIModalPresentationFormSheet;
