@@ -257,9 +257,19 @@
     NSString *mocPath = [modelDir stringByAppendingPathComponent:mocRelative];
     _live2DModel = live2d::Live2DModelIPhone::loadModel([mocPath UTF8String]);
     if (!_live2DModel) {
-        NSLog(@"[Live2D] Failed to load moc at %@", mocPath);
+        NSError *attrErr = nil;
+        NSDictionary *attrs = [[NSFileManager defaultManager] attributesOfItemAtPath:mocPath error:&attrErr];
+        NSLog(@"[Live2D] Failed to load moc at %@ (exists=%d size=%lld err=%@)", mocPath,
+              [[NSFileManager defaultManager] fileExistsAtPath:mocPath],
+              (long long)[attrs fileSize], attrErr);
         _isSwitchingModel = NO;
         [_renderLock unlock];
+        dispatch_async(dispatch_get_main_queue(), ^{
+            [[NSNotificationCenter defaultCenter] postNotificationName:@"AsunaModelLoadFailed"
+                                                                object:nil
+                                                              userInfo:@{@"name": jsonName.stringByDeletingPathExtension ?: @"model",
+                                                                         @"path": mocPath ?: @""}];
+        });
         return;
     }
     

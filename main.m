@@ -189,7 +189,11 @@ static NSString *CleanSpeechText(NSString *input) {
     [defs setObject:_currentAvatar forKey:PREF_CURRENT_AVATAR];
     [defs setBool:_webSearchEnabled forKey:PREF_WEB_SEARCH];
     [defs setBool:_localTTSEnabled forKey:PREF_TTS_LOCAL];
-    [defs setObject:_customBgPath forKey:PREF_CUSTOM_BG_PATH];
+    [defs setObject:_customBgPath ?: @"" forKey:PREF_CUSTOM_BG_PATH];
+    [defs setInteger:_displayPreset forKey:PREF_DISPLAY_PRESET];
+    [defs setDouble:_freeScale forKey:PREF_FREE_SCALE];
+    [defs setDouble:_freeOffsetX forKey:PREF_FREE_OX];
+    [defs setDouble:_freeOffsetY forKey:PREF_FREE_OY];
     [defs synchronize];
 }
 @end
@@ -1252,6 +1256,7 @@ static NSString *CleanSpeechText(NSString *input) {
     sm.freeScale = _live2dCharacterView.freeScale;
     sm.freeOffsetX = _live2dCharacterView.freeOffsetX;
     sm.freeOffsetY = _live2dCharacterView.freeOffsetY;
+    _live2dCharacterView.displayPreset = 3;
     [sm save];
     _isAdjustingLayout = NO;
     if (_adjustPinch) _adjustPinch.enabled = NO;
