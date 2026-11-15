@@ -676,28 +676,40 @@
     CGFloat scaleX = viewW / canvasW;
     CGFloat scaleY = viewH / canvasH;
     CGFloat fit = MIN(scaleX, scaleY);
-    CGFloat mul = 1.05f;
-    CGFloat extraY = -viewH * 0.05f;
+    // Keep head fully visible: top of model always below screen edge (iPad mini 2 safe margin)
+    CGFloat topMargin = MAX(20.0f, viewH * 0.035f);
+    CGFloat scale = fit;
+    CGFloat offsetY = 0;
+    
     switch (_displayPreset) {
-        case 1: // от юбки до головы
-            mul = 1.70f;
-            extraY = viewH * 0.10f;
+        case 1: { // От юбки до головы: крупнее, ноги за экраном снизу, голова целиком
+            scale = fit * 1.55f;
+            CGFloat scaledH = canvasH * scale;
+            offsetY = topMargin;
+            // ensure lower part (skirt area) stays in view, avoid pushing model too low
+            CGFloat maxOffsetY = viewH - scaledH * 0.62f; // keep ~top 62% visible
+            if (offsetY < maxOffsetY) offsetY = maxOffsetY;
             break;
-        case 2: // крупный план
-            mul = 2.20f;
-            extraY = viewH * 0.18f;
+        }
+        case 2: { // Крупный план: лицо и плечи
+            scale = fit * 2.00f;
+            CGFloat scaledH = canvasH * scale;
+            offsetY = topMargin;
+            CGFloat maxOffsetY = viewH - scaledH * 0.45f;
+            if (offsetY < maxOffsetY) offsetY = maxOffsetY;
             break;
-        default:
-            mul = 1.05f;
-            extraY = -viewH * 0.05f;
+        }
+        default: { // Полный рост
+            scale = fit * 1.02f;
+            CGFloat scaledH = canvasH * scale;
+            offsetY = (viewH - scaledH) / 2.0f;
+            if (offsetY < topMargin) offsetY = topMargin;
             break;
+        }
     }
-    CGFloat scale = fit * mul;
     
     CGFloat scaledW = canvasW * scale;
-    CGFloat scaledH = canvasH * scale;
     CGFloat offsetX = (viewW - scaledW) / 2.0f;
-    CGFloat offsetY = (viewH - scaledH) / 2.0f + extraY;
     
     glOrthof(0, viewW, viewH, 0, -1.0f, 1.0f);
     
