@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<sagent-client-data-install-config version="201505181300">
+ <archives>
+  <archive id="tts-data-ja" version="201505181300" compatible-version="201505181300" url="http://dmap-lb.yellow.visionarts.com/SPOT/201505181300/tts-data-ja" length="10734933" hash="cb2b83e36f772303be6fe73e278dfdd9">
+   <contents>
+    <content name="jaJP_voiceDic_DF_FHT000H3.dicL" length="9877816" hash="831a064a616933e009c897e25cbecbdf" location="" />
+    <content name="libtts_uselimit.bin" length="256" hash="d96614bb0d2f6df14fcb0d2135197027" location="" />
+    <content name="jaJP_langDic_n40c.dicL" length="5787904" hash="7ccdf78ed42f70eb1f553c229831cd23" location="" />
+    <content name="jaJP_prosDic_TR_FHT000H3.dicL" length="506112" hash="180f86508b861dcf6dabc30da10c209d" location="" />
+   </contents>
+  </archive>
+ </archives>
+</sagent-client-data-install-config>
