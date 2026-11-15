@@ -569,7 +569,9 @@
     float bodyAngleX = sinf(idleElapsed * 0.5f) * 0.8f;     // gentle body sway
     
     // Smooth parameter interpolation (LLM/gestures -> model)
-    _currentLipSync += (_targetLipSync - _currentLipSync) * 0.25f;
+    // Lip sync: fast attack, slower release for natural speech (no "chatter" decay)
+    float lipK = (_targetLipSync > _currentLipSync) ? 0.45f : 0.18f;
+    _currentLipSync += (_targetLipSync - _currentLipSync) * lipK;
     _currentHeadX += (_targetHeadX - _currentHeadX) * 0.12f;
     _currentHeadY += (_targetHeadY - _currentHeadY) * 0.12f;
     _currentBodyAngle += (_targetBodyAngle - _currentBodyAngle) * 0.12f;
@@ -581,7 +583,6 @@
         _targetBodyAngle *= 0.992f;
     }
     _targetEyeOpen += (1.0f - _targetEyeOpen) * 0.01f;
-    _targetLipSync *= 0.92f;
     
     // Gesture offsets (procedural, applied on top)
     float gAngleX = 0, gAngleY = 0, gAngleZ = 0, gBodyX = 0, gArmR = 0, gArmL = 0;

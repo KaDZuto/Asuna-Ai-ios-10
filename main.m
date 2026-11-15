@@ -971,6 +971,9 @@ static NSString *CleanSpeechText(NSString *input) {
     AVSpeechSynthesizer *_speechSynthesizer;
     NSTimer *_lipSyncTimer;
     NSTimeInterval _lipSyncPhase;
+    float _lipSyncCurrent;
+    float _lipSyncTarget;
+    float _lipSyncEnergy;
 }
 
 - (void)viewDidLoad {
@@ -1409,28 +1412,62 @@ static NSString *CleanSpeechText(NSString *input) {
 
 #pragma mark - Local Speech Synthesis
 
+- (float)lipOpennessForCharacter:(unichar)c {
+    // Approximate viseme openness from character (ru/en); vowels open, consonants/punct close
+    unichar lc = c;
+    if (lc >= 'A' && lc <= 'Z') lc = (unichar)(lc - 'A' + 'a');
+    if (lc >= L'А' && lc <= L'Я') lc = (unichar)(lc - L'А' + L'а');
+    if (lc == L'ё') lc = L'е';
+    switch (lc) {
+        case 'a': case L'а': case L'я': return 0.85f;
+        case 'o': case L'о': case L'ё': return 0.80f;
+        case 'u': case L'у': case L'ю': return 0.45f;
+        case 'e': case L'э': case L'е': return 0.70f;
+        case 'i': case L'и': case L'ы': return 0.35f;
+        case 'y': return 0.35f;
+        case ' ': case '\n': case '\t': case ',': case '.': case '!': case '?': case ':': case ';': return 0.05f;
+        case 'm': case 'b': case 'p': case L'м': case L'б': case L'п': return 0.08f;
+        case 'f': case 'v': case L'ф': case L'в': return 0.18f;
+        case 's': case 'z': case 'c': case L'с': case L'з': case L'ц': return 0.20f;
+        default: break;
+    }
+    if ([[NSCharacterSet letterCharacterSet] characterIsMember:c]) return 0.38f;
+    return 0.10f;
+}
+
 - (void)startLipSyncAnimation {
     [self stopLipSyncAnimation];
     _lipSyncPhase = 0;
+    _lipSyncCurrent = 0;
+    _lipSyncTarget = 0.25f;
+    _lipSyncEnergy = 0.4f;
     __weak typeof(self) weakSelf = self;
-    _lipSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer * _Nonnull timer) {
+    _lipSyncTimer = [NSTimer scheduledTimerWithTimeInterval:1.0/30.0 repeats:YES block:^(NSTimer * _Nonnull timer) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) { [timer invalidate]; return; }
-        // Speech-like envelope: syllable pulses + micro jitter (approximates voice amplitude lip sync)
-        self->_lipSyncPhase += 0.42 + (arc4random_uniform(25) / 100.0);
-        float syll = (sinf((float)self->_lipSyncPhase * 1.7f) + 1.0f) * 0.5f;
-        float fast = (sinf((float)self->_lipSyncPhase * 4.3f) + 1.0f) * 0.5f;
-        float noise = arc4random_uniform(100) / 200.0f;
-        float v = syll * 0.55f + fast * 0.30f + noise * 0.25f;
-        if (v < 0.05f) v = 0.05f;
-        if (v > 1.0f) v = 1.0f;
-        [self->_live2dCharacterView setLipSyncValue:v];
+        self->_lipSyncPhase += 0.22 + (arc4random_uniform(18) / 100.0);
+        // Coarticulation-like flow: drift target toward energy, occasional soft closures (consonants), no hard "am-am"
+        float drift = ((arc4random_uniform(100) / 100.0f) - 0.5f) * 0.18f;
+        float base = self->_lipSyncEnergy + drift;
+        // soft syllabic modulation around current energy
+        base += 0.12f * sinf((float)self->_lipSyncPhase * 1.25f);
+        // occasional micro-closure
+        float micro = (sinf((float)self->_lipSyncPhase * 3.7f) + 1.0f) * 0.5f;
+        if (micro < 0.12f) base *= 0.35f;
+        if (base < 0.04f) base = 0.04f;
+        if (base > 0.95f) base = 0.95f;
+        self->_lipSyncTarget = base;
+        // ease current toward target (natural muscle lag)
+        float k = (self->_lipSyncTarget > self->_lipSyncCurrent) ? 0.35f : 0.22f;
+        self->_lipSyncCurrent += (self->_lipSyncTarget - self->_lipSyncCurrent) * k;
+        [self->_live2dCharacterView setLipSyncValue:self->_lipSyncCurrent];
     }];
     [[NSRunLoop mainRunLoop] addTimer:_lipSyncTimer forMode:NSRunLoopCommonModes];
 }
 
 - (void)stopLipSyncAnimation {
     if (_lipSyncTimer) { [_lipSyncTimer invalidate]; _lipSyncTimer = nil; }
+    _lipSyncCurrent = 0; _lipSyncTarget = 0; _lipSyncEnergy = 0;
     [_live2dCharacterView setLipSyncValue:0.0f];
 }
 
@@ -1462,13 +1499,15 @@ static NSString *CleanSpeechText(NSString *input) {
 }
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer willSpeakRangeOfSpeechString:(NSRange)characterRange utterance:(AVSpeechUtterance *)utterance {
-    // speech-timed pulse: stronger on word starts, slight dip on spaces/punctuation
     NSString *full = utterance.speechString ?: @"";
     unichar c = (characterRange.location < full.length) ? [full characterAtIndex:characterRange.location] : ' ';
-    BOOL boundary = [[NSCharacterSet whitespaceAndNewlineCharacterSet] characterIsMember:c] || [[NSCharacterSet punctuationCharacterSet] characterIsMember:c];
-    float pulse = boundary ? (0.20f + arc4random_uniform(20)/100.0f) : (0.55f + arc4random_uniform(45)/100.0f);
-    [_live2dCharacterView setLipSyncValue:pulse];
-    _lipSyncPhase += boundary ? 0.35 : 1.1;
+    unichar n = ((characterRange.location + 1) < full.length) ? [full characterAtIndex:characterRange.location + 1] : ' ';
+    float o1 = [self lipOpennessForCharacter:c];
+    float o2 = [self lipOpennessForCharacter:n];
+    // blend current/next for coarticulation, keep energy as target the 30fps timer eases toward
+    _lipSyncEnergy = o1 * 0.65f + o2 * 0.35f;
+    // nudge phase for natural rhythm, but don't hard-set mouth (avoids "am-am")
+    _lipSyncPhase += 0.35f + o1 * 0.5f;
 }
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didFinishSpeechUtterance:(AVSpeechUtterance *)utterance {
