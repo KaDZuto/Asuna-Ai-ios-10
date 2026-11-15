@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+<canvas id="c" width="400" height="600"></canvas>
+<script src="www/libs/pixi.min.js"></script>
+<script src="www/libs/live2d.min.js"></script>
+<script src="www/libs/cubism2.min.js"></script>
+<script>
+const app = new PIXI.Application({
+  view: document.getElementById('c'),
+  width: 400,
+  height: 600,
+  transparent: true
+});
+
+PIXI.live2d.Live2DModel.from('www/models/asuna_01/asuna_01.model.json').then(model => {
+  model.scale.set(0.2);
+  model.x = 200;
+  model.y = 300;
+  app.stage.addChild(model);
+  
+  const core = model.internalModel.coreModel;
+  const drawParam = core.drawParamWebGL;
+  const origUo = drawParam._$Uo;
+  let callNum = 0;
+  drawParam._$Uo = function(textureNo, indexCount, indexArray, vertexArray, uvArray, opacity, blendMode, context) {
+    if (callNum < 3) {
+      console.log(`[DRAW #${callNum}] texNo=${textureNo}, indexCount=${indexCount}`);
+      console.log('  indexArray type:', indexArray.constructor.name, 'len:', indexArray.length, 'sample:', Array.from(indexArray.slice(0, 6)));
+      console.log('  vertexArray type:', vertexArray.constructor.name, 'len:', vertexArray.length, 'sample:', Array.from(vertexArray.slice(0, 6)));
+      console.log('  uvArray type:', uvArray.constructor.name, 'len:', uvArray.length, 'sample:', Array.from(uvArray.slice(0, 6)));
+    }
+    callNum++;
+    return origUo.apply(this, arguments);
+  };
+});
+</script>
+</body>
+</html>

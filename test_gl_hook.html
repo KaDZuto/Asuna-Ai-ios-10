@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+<canvas id="c" width="400" height="600"></canvas>
+<script src="www/libs/pixi.min.js"></script>
+<script src="www/libs/live2d.min.js"></script>
+<script src="www/libs/cubism2.min.js"></script>
+<script>
+const app = new PIXI.Application({
+  view: document.getElementById('c'),
+  width: 400,
+  height: 600,
+  transparent: true
+});
+
+const gl = app.renderer.gl;
+const origDrawElements = gl.drawElements;
+let drawCount = 0;
+gl.drawElements = function(mode, count, type, offset) {
+  if (drawCount < 5) {
+    const ib = gl.getParameter(gl.ELEMENT_ARRAY_BUFFER_BINDING);
+    console.log(`[GL HOOK] drawElements #${drawCount}: mode=${mode}, count=${count}, type=${type}, offset=${offset}, ib=${ib}`);
+  }
+  drawCount++;
+  return origDrawElements.apply(this, arguments);
+};
+
+PIXI.live2d.Live2DModel.from('www/models/asuna_01/asuna_01.model.json').then(model => {
+  model.scale.set(0.2);
+  model.x = 200;
+  model.y = 300;
+  app.stage.addChild(model);
+  console.log('Model added to stage. Total draw calls so far:', drawCount);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,5 @@
+build/
+_www_legacy/
+*.ipa
+*.dSYM
+.DS_Store

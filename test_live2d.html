@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+body { background: #111; color: #eee; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }
+canvas { border: 1px solid #444; width: 300px; height: 400px; display: block; margin: 0 auto; }
+#log { text-align: left; background: #222; padding: 10px; margin-top: 10px; font-size: 12px; height: 150px; overflow-y: scroll; }
+</style>
+</head>
+<body>
+<h3>Live2D Engine Diagnostic</h3>
+<canvas id="c"></canvas>
+<div id="log"></div>
+<script src="www/libs/pixi.min.js"></script>
+<script src="www/libs/live2d.min.js"></script>
+<script src="www/libs/cubism2.min.js"></script>
+<script>
+function log(msg) {
+  var d = document.getElementById('log');
+  d.innerHTML += msg + '<br>';
+}
+window.onerror = function(m, u, l) { log("ERR: " + m + " line:" + l); };
+
+try {
+  log("PIXI: " + (typeof PIXI));
+  log("PIXI.live2d: " + (typeof PIXI.live2d));
+  log("Live2DModel: " + (typeof PIXI.live2d.Live2DModel));
+  
+  var app = new PIXI.Application({
+    view: document.getElementById('c'),
+    width: 300,
+    height: 400,
+    transparent: true
+  });
+  log("App created");
+
+  PIXI.live2d.Live2DModel.from('www/models/asuna_01/asuna_01.model.json').then(function(model) {
+    log("MODEL LOADED!");
+    model.anchor.set(0.5, 0.5);
+    model.x = 150;
+    model.y = 200;
+    model.scale.set(0.2);
+    app.stage.addChild(model);
+  }).catch(function(err) {
+    log("PROMISE CATCH: " + err);
+  });
+} catch(e) {
+  log("EXCEPTION: " + e);
+}
+</script>
+</body>
+</html>
