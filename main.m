@@ -1145,13 +1145,14 @@ static NSString *CleanSpeechText(NSString *input) {
     _live2dCharacterView.autoresizingMask = UIViewAutoresizingFlexibleWidth | UIViewAutoresizingFlexibleHeight;
     [self.view addSubview:_live2dCharacterView];
     
-    // Load default Asuna outfit (asuna_01 - Knights of the Blood)
+    // Load saved outfit and display settings
     SettingsManager *sm = [SettingsManager shared];
     _live2dCharacterView.displayPreset = sm.displayPreset;
-    _live2dCharacterView.freeScale = sm.freeScale;
+    _live2dCharacterView.freeScale = (sm.freeScale < 0.2 ? 1.0 : sm.freeScale);
     _live2dCharacterView.freeOffsetX = sm.freeOffsetX;
     _live2dCharacterView.freeOffsetY = sm.freeOffsetY;
-    [_live2dCharacterView loadModelNamed:@"asuna_01"];
+    NSString *avatar = (sm.currentAvatar && sm.currentAvatar.length > 0) ? sm.currentAvatar : @"asuna_01";
+    [_live2dCharacterView loadModelNamed:avatar];
 
     // Tap gesture for interactive reactions
     UITapGestureRecognizer *tap = [[UITapGestureRecognizer alloc] initWithTarget:self action:@selector(onCharacterTapped:)];
@@ -1717,8 +1718,6 @@ static NSString *CleanSpeechText(NSString *input) {
 }
 
 - (void)onSwapModelTapped {
-    UIAlertController *al = [UIAlertController alertControllerWithTitle:@"Выбор модели Live2D" message:@"Локальные образы Асуны:" preferredStyle:UIAlertControllerStyleActionSheet];
-    
     NSString *bundleRoot = [[NSBundle mainBundle] bundlePath];
     NSArray *modelDirs = @[
         [bundleRoot stringByAppendingPathComponent:@"models"],
@@ -1729,7 +1728,7 @@ static NSString *CleanSpeechText(NSString *input) {
     for (NSString *dir in modelDirs) {
         BOOL isDir = NO;
         if (![fm fileExistsAtPath:dir isDirectory:&isDir] || !isDir) continue;
-        NSArray *contents = [[fm contentsOfDirectoryAtPath:dir error:nil] sortedArrayUsingSelector:@selector(compare:)];
+        NSArray *contents = [[fm contentsOfDirectoryAtPath:dir error:nil] sortedArrayUsingSelector:@selector(localizedStandardCompare:)];
         for (NSString *name in contents) {
             NSString *sub = [dir stringByAppendingPathComponent:name];
             BOOL subDir = NO;
@@ -1743,28 +1742,30 @@ static NSString *CleanSpeechText(NSString *input) {
         }
         if (modelItems.count > 0) break;
     }
-    
     if (modelItems.count == 0) {
-        modelItems = [@[
-            @{@"name": @"asuna_01", @"id": @"asuna_01"},
-            @{@"name": @"asuna_02", @"id": @"asuna_02"},
-            @{@"name": @"asuna_03", @"id": @"asuna_03"}
-        ] mutableCopy];
+        for (int i = 1; i <= 56; i++) {
+            NSString *mid = [NSString stringWithFormat:@"asuna_%02d", i];
+            [modelItems addObject:@{@"name": [NSString stringWithFormat:@"Образ #%02d", i], @"id": mid}];
+        }
     }
-    
-    NSInteger count = MIN((NSInteger)modelItems.count, 20);
-    for (NSInteger i = 0; i < count; i++) {
-        NSDictionary *m = modelItems[i];
+
+    __weak typeof(self) weakSelf = self;
+    UIAlertController *al = [UIAlertController alertControllerWithTitle:@"Выбор модели Live2D"
+                                                                message:[NSString stringWithFormat:@"Доступно образов: %lu", (unsigned long)modelItems.count]
+                                                         preferredStyle:UIAlertControllerStyleAlert];
+    for (NSDictionary *m in modelItems) {
         [al addAction:[UIAlertAction actionWithTitle:m[@"name"] style:UIAlertActionStyleDefault handler:^(UIAlertAction *action) {
+            __strong typeof(weakSelf) self = weakSelf;
+            if (!self) return;
             [self->_live2dCharacterView loadModelNamed:m[@"id"]];
-            self->_speechBubbleLabel.text = [NSString stringWithFormat:@"Модель Live2D переключена на %@", m[@"name"]];
+            SettingsManager *sm = [SettingsManager shared];
+            sm.currentAvatar = m[@"id"];
+            [sm save];
+            self->_speechBubbleLabel.text = [NSString stringWithFormat:@"Модель: %@", m[@"name"]];
             [self speakTextLocally:@"Образ изменен. Как тебе?"];
         }]];
     }
     [al addAction:[UIAlertAction actionWithTitle:@"Отмена" style:UIAlertActionStyleCancel handler:nil]];
-    
-    al.popoverPresentationController.sourceView = _dockSwapBtn;
-    al.popoverPresentationController.sourceRect = _dockSwapBtn.bounds;
     [self presentViewController:al animated:YES completion:nil];
 }
 
