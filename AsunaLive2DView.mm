@@ -332,8 +332,13 @@
     _isModelLoaded = YES;
     _isSwitchingModel = NO;
     _idleStartTime = [NSDate timeIntervalSinceReferenceDate];
+    _nextExpressionTime = _idleStartTime + 20.0 + (arc4random_uniform(1500) / 100.0);
+    _nextLifeNudgeTime = _idleStartTime + 3.0;
     
     [self startIdleAnimation];
+    if (_expressions.find("F_NOMAL") != _expressions.end()) [self setExpressionNamed:@"F_NOMAL"];
+    else if (_expressions.find("F_FUN_SMILE") != _expressions.end()) [self setExpressionNamed:@"F_FUN_SMILE"];
+    else if (!_expressions.empty()) [self setExpressionNamed:[NSString stringWithUTF8String:_expressions.begin()->first.c_str()]];
     [_renderLock unlock];
     
     NSLog(@"[Live2D] Successfully loaded native model %@ (%lu textures, %lu motions, %lu expressions)",
@@ -356,7 +361,7 @@
         it->second->setLoop(false);
         _motionManager->startMotion(it->second, false);
     }
-    _nextIdleSwitchTime = [NSDate timeIntervalSinceReferenceDate] + 4.0 + (arc4random_uniform(400) / 100.0);
+    _nextIdleSwitchTime = [NSDate timeIntervalSinceReferenceDate] + 8.0 + (arc4random_uniform(700) / 100.0);
 }
 
 - (void)setLipSyncValue:(CGFloat)value {
@@ -532,22 +537,30 @@
             [self startIdleAnimation];
         }
     }
-    // Random expression changes for liveliness
+    // Occasional soft expression changes for liveliness (no random mood swings)
     if (now >= _nextExpressionTime && !_expressions.empty()) {
-        int idx = arc4random_uniform((uint32_t)_expressions.size());
-        auto it = _expressions.begin();
-        std::advance(it, idx);
-        [self setExpressionNamed:[NSString stringWithUTF8String:it->first.c_str()]];
-        _nextExpressionTime = now + 6.0 + (arc4random_uniform(800) / 100.0);
+        static const char *calm[] = {"F_NOMAL","F_FUN","F_FUN_SMILE","F_FUN_WARM","F_FUN_HANIKAMI","F_THINK","F_SILENT","F_SURPRISE"};
+        int calmCount = (int)(sizeof(calm)/sizeof(calm[0]));
+        std::string pick = calm[arc4random_uniform(calmCount)];
+        if (_expressions.find(pick) == _expressions.end()) {
+            // fallback: first available calm-ish or stay
+            for (auto &e : _expressions) {
+                if (e.first.find("FUN") != std::string::npos || e.first.find("NOMAL") != std::string::npos || e.first.find("SMILE") != std::string::npos) { pick = e.first; break; }
+            }
+        }
+        if (_expressions.find(pick) != _expressions.end()) {
+            [self setExpressionNamed:[NSString stringWithUTF8String:pick.c_str()]];
+        }
+        _nextExpressionTime = now + 25.0 + (arc4random_uniform(2500) / 100.0);
     }
     // Small autonomous head/body nudges when not being dragged
     if (now >= _nextLifeNudgeTime && (now - _lastPanTime) > 0.8) {
-        float nx = ((int)arc4random_uniform(200) - 100) / 200.0f; // -0.5..0.5
-        float ny = ((int)arc4random_uniform(200) - 100) / 240.0f;
-        _targetHeadX += nx * 6.0f;
-        _targetHeadY += ny * 5.0f;
-        _targetBodyAngle += nx * 2.5f;
-        _nextLifeNudgeTime = now + 2.5 + (arc4random_uniform(300) / 100.0);
+        float nx = ((int)arc4random_uniform(200) - 100) / 300.0f;
+        float ny = ((int)arc4random_uniform(200) - 100) / 360.0f;
+        _targetHeadX += nx * 4.0f;
+        _targetHeadY += ny * 3.0f;
+        _targetBodyAngle += nx * 1.5f;
+        _nextLifeNudgeTime = now + 4.0 + (arc4random_uniform(400) / 100.0);
     }
     
     // Continuous procedural breathing & micro-sway (natural life idle)

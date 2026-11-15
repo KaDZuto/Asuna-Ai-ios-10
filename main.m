@@ -834,7 +834,7 @@ static NSString *CleanSpeechText(NSString *input) {
         [_inputPill.leadingAnchor constraintEqualToAnchor:_inputBar.leadingAnchor constant:12],
         [_inputPill.trailingAnchor constraintEqualToAnchor:_sendBtn.leadingAnchor constant:-10],
         [_inputPill.topAnchor constraintEqualToAnchor:_inputBar.topAnchor constant:10],
-        [_inputPill.bottomAnchor constraintEqualToAnchor:self.view.safeAreaLayoutGuide.bottomAnchor constant:-8],
+        [_inputPill.bottomAnchor constraintEqualToAnchor:_inputBar.bottomAnchor constant:-10],
         [_inputPill.heightAnchor constraintGreaterThanOrEqualToConstant:40],
         [_inputField.leadingAnchor constraintEqualToAnchor:_inputPill.leadingAnchor constant:14],
         [_inputField.trailingAnchor constraintEqualToAnchor:_inputPill.trailingAnchor constant:-14],
@@ -854,7 +854,7 @@ static NSString *CleanSpeechText(NSString *input) {
     NSTimeInterval dur = [n.userInfo[UIKeyboardAnimationDurationUserInfoKey] doubleValue];
     UIViewAnimationCurve curve = [n.userInfo[UIKeyboardAnimationCurveUserInfoKey] integerValue];
     CGRect endInView = [self.view convertRect:end fromView:nil];
-    CGFloat overlap = MAX(0, CGRectGetMaxY(self.view.bounds) - CGRectGetMinY(endInView) - self.view.safeAreaInsets.bottom);
+    CGFloat overlap = MAX(0, CGRectGetMaxY(self.view.bounds) - CGRectGetMinY(endInView));
     _inputBarBottom.constant = -overlap;
     [UIView animateWithDuration:dur delay:0 options:(curve << 16) animations:^{ [self.view layoutIfNeeded]; } completion:nil];
     [self scrollToBottomAnimated:YES];
@@ -1413,13 +1413,16 @@ static NSString *CleanSpeechText(NSString *input) {
     [self stopLipSyncAnimation];
     _lipSyncPhase = 0;
     __weak typeof(self) weakSelf = self;
-    _lipSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.06 repeats:YES block:^(NSTimer * _Nonnull timer) {
+    _lipSyncTimer = [NSTimer scheduledTimerWithTimeInterval:0.05 repeats:YES block:^(NSTimer * _Nonnull timer) {
         __strong typeof(weakSelf) self = weakSelf;
         if (!self) { [timer invalidate]; return; }
-        self->_lipSyncPhase += 0.55 + (arc4random_uniform(20) / 100.0);
-        float wave = (sinf((float)self->_lipSyncPhase) + 1.0f) * 0.5f; // 0..1
-        float jitter = (arc4random_uniform(100) / 100.0f) * 0.25f;
-        float v = 0.18f + wave * 0.62f + jitter * 0.2f;
+        // Speech-like envelope: syllable pulses + micro jitter (approximates voice amplitude lip sync)
+        self->_lipSyncPhase += 0.42 + (arc4random_uniform(25) / 100.0);
+        float syll = (sinf((float)self->_lipSyncPhase * 1.7f) + 1.0f) * 0.5f;
+        float fast = (sinf((float)self->_lipSyncPhase * 4.3f) + 1.0f) * 0.5f;
+        float noise = arc4random_uniform(100) / 200.0f;
+        float v = syll * 0.55f + fast * 0.30f + noise * 0.25f;
+        if (v < 0.05f) v = 0.05f;
         if (v > 1.0f) v = 1.0f;
         [self->_live2dCharacterView setLipSyncValue:v];
     }];
@@ -1459,10 +1462,13 @@ static NSString *CleanSpeechText(NSString *input) {
 }
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer willSpeakRangeOfSpeechString:(NSRange)characterRange utterance:(AVSpeechUtterance *)utterance {
-    // pulse mouth on word boundaries (lip sync driven by speech timing)
-    float pulse = 0.55f + (arc4random_uniform(45) / 100.0f);
+    // speech-timed pulse: stronger on word starts, slight dip on spaces/punctuation
+    NSString *full = utterance.speechString ?: @"";
+    unichar c = (characterRange.location < full.length) ? [full characterAtIndex:characterRange.location] : ' ';
+    BOOL boundary = [[NSCharacterSet whitespaceAndNewlineCharacterSet] characterIsMember:c] || [[NSCharacterSet punctuationCharacterSet] characterIsMember:c];
+    float pulse = boundary ? (0.20f + arc4random_uniform(20)/100.0f) : (0.55f + arc4random_uniform(45)/100.0f);
     [_live2dCharacterView setLipSyncValue:pulse];
-    _lipSyncPhase += 0.9;
+    _lipSyncPhase += boundary ? 0.35 : 1.1;
 }
 
 - (void)speechSynthesizer:(AVSpeechSynthesizer *)synthesizer didFinishSpeechUtterance:(AVSpeechUtterance *)utterance {
